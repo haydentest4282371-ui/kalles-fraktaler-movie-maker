@@ -382,6 +382,29 @@ def render_sequence(folder, out="out.mp4", fps=60, segment_size=100):
     # ----------------------------
     print("[render] concatenating segments...")
 
-    subprocess.run(["ffmpeg", "-y", "-pattern_type", "glob", "-i", f"{config.TMP}/part_*.mp4", "-c", "copy", out])
+        def ffmpeg_concat_segments(tmp_dir, out_path):
+        tmp_dir = Path(tmp_dir)
+
+        parts = sorted(tmp_dir.glob("part_*.mp4"))
+        if not parts:
+            raise ValueError(f"No segments found in {tmp_dir}")
+
+        concat_file = tmp_dir / "concat.txt"
+
+        with open(concat_file, "w") as f:
+            for p in parts:
+                f.write(f"file '{p.resolve().as_posix()}'\n")
+
+        subprocess.run([
+            "ffmpeg",
+            "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(concat_file),
+            "-c", "copy",
+            str(out_path)
+        ], check=True)
+
+    ffmpeg_concat_segments(TMP_DIR, out)
 
     print(f"[render] DONE -> {out}")
