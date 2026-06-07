@@ -382,6 +382,6 @@ def render_sequence(folder, out="out.mp4", fps=60, segment_size=100):
     # ----------------------------
     print("[render] concatenating segments...")
 
-    subprocess.run(["ffmpeg", "-y", "-pattern_type", "glob", "-i", "tmp_segments/part_*.mp4", "-c", "copy", out])
+    subprocess.run(["ffmpeg", "-y", "-pattern_type", "glob", "-i", f"{config.TMP}/part_*.mp4", "-c", "copy", out])
 
     print(f"[render] DONE -> {out}")
