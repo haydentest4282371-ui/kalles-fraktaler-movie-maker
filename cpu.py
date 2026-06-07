@@ -7,6 +7,7 @@ from kfb import KFB
 import config
 from numba import njit, prange
 import time
+import json
 
 inv_tau = 1 / (2 * math.pi)
 
@@ -59,6 +60,26 @@ class StageClock:
             print(f"{k:20s}: {v:.4f}s  ({v/frames:.6f}s/frame)")
 
 
+# -------------------------------------------------------------------
+# PALETTE CACHE
+# -------------------------------------------------------------------
+_cols_cache: dict = {}
+
+def _get_palette():
+    key = config.PALETTE
+    if key not in _cols_cache:
+        cols = np.asarray(config.PALETTES[key], dtype=np.float32)
+        if cols.shape[1] == 3:
+            alpha = np.full((cols.shape[0], 1), 255.0, dtype=np.float32)
+            cols = np.concatenate([cols, alpha], axis=1)
+        _cols_cache[key] = cols
+    return _cols_cache[key]
+
+
+# -------------------------------------------------------------------
+# JIT KERNELS
+# -------------------------------------------------------------------
+
 @njit(parallel=True, cache=True)
 def lighting_core(smooth, light_angle, lighting):
     h, w = smooth.shape
@@ -81,7 +102,6 @@ def lighting_core(smooth, light_angle, lighting):
 def colorize_core(base_phase, lighting, iters, max_iter, cols, flow,
                   black_towards_end, black_start, black_strength,
                   out, inv_tau, ncol):
-
     h, w = base_phase.shape
     for y in prange(h):
         for x in range(w):
@@ -102,7 +122,6 @@ def colorize_core(base_phase, lighting, iters, max_iter, cols, flow,
                 idx = ncol - 1
 
             c = cols[idx]
-
             val = c[3] * 0.00392156862 * lt
 
             if black_towards_end and u > black_start:
@@ -118,26 +137,35 @@ def colorize_core(base_phase, lighting, iters, max_iter, cols, flow,
             out[y, x, 2] = int(c[2] * val)
 
 
+# -------------------------------------------------------------------
+# BUILD RENDER CACHE
+# -------------------------------------------------------------------
+
 def build_render_cache(kfb, light_angle=0.7):
-    h, w = kfb.smooth.shape
     smooth = kfb.smooth.astype(np.float32)
+    h, w = smooth.shape
     lighting = np.empty((h, w), dtype=np.float32)
     lighting_core(smooth, light_angle, lighting)
     base_phase = smooth / float(max(kfb.colour_div, 1))
     return lighting, base_phase, kfb.iter, kfb.max_iter
 
 
+# -------------------------------------------------------------------
+# COLORIZE
+# -------------------------------------------------------------------
+
 def colorize(cache, flow, out):
     lighting, base_phase, iters, max_iter = cache
-    cols = np.asarray(config.PALETTES[config.PALETTE], dtype=np.float32)
-    if cols.shape[1] == 3:
-        alpha = np.full((cols.shape[0], 1), 255.0, dtype=np.float32)
-        cols = np.concatenate([cols, alpha], axis=1)
+    cols = _get_palette()
     ncol = cols.shape[0]
     colorize_core(base_phase, lighting, iters, max_iter, cols, flow,
                   config.BLACK_TOWARDS_END, config.BLACK_START, config.BLACK_STRENGTH,
                   out, inv_tau, ncol)
 
+
+# -------------------------------------------------------------------
+# MISC
+# -------------------------------------------------------------------
 
 def zoom(img, scale):
     h, w = img.shape[:2]
@@ -163,11 +191,56 @@ def create_encoder(path, fps, w, h, codec="libx265"):
     return subprocess.Popen(cmd, stdin=subprocess.PIPE)
 
 
-def render_sequence(folder, out="out.mp4", fps=60):
+def ffmpeg_concat_segments(tmp_dir, out_path):
+    tmp_dir = Path(tmp_dir)
+    parts = sorted(tmp_dir.glob("part_*.mp4"))
+    if not parts:
+        raise ValueError(f"No segments found in {tmp_dir}")
+    concat_file = tmp_dir / "concat.txt"
+    with open(concat_file, "w") as f:
+        for p in parts:
+            f.write(f"file '{p.resolve().as_posix()}'\n")
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0",
+        "-i", str(concat_file),
+        "-c", "copy",
+        str(out_path)
+    ], check=True)
+
+
+# -------------------------------------------------------------------
+# MAIN RENDER
+# -------------------------------------------------------------------
+
+def render_sequence(folder, out="out.mp4", fps=60, segment_size=100):
+
+    STATE_FILE = Path(config.STATE_FILE)
+    TMP_DIR = Path(config.TMP)
+    TMP_DIR.mkdir(exist_ok=True)
+
+    def save_state(seg_i, frame_id):
+        STATE_FILE.write_text(json.dumps({
+            "seg_i": seg_i,
+            "frame_id": frame_id
+        }))
+
+    def load_state():
+        if not STATE_FILE.exists():
+            return 0, 0
+        d = json.loads(STATE_FILE.read_text())
+        return d.get("seg_i", 0), d.get("frame_id", 0)
+
+    def segment_path(i):
+        return TMP_DIR / f"part_{i:05d}.mp4"
+
     clock = StageClock()
 
     files = discover(folder)
     print(f"[render] Found {len(files)} KFB files")
+
+    start_seg, frame_id = load_state()
+    print(f"[render] Resuming at segment={start_seg}, frame={frame_id}")
 
     kfb_a = load_kfb(files[0])
     cache_a = build_render_cache(kfb_a)
@@ -175,49 +248,64 @@ def render_sequence(folder, out="out.mp4", fps=60):
     h, w = cache_a[1].shape
     frame_buf = np.empty((h, w, 3), dtype=np.uint8)
 
-    writer = create_encoder(out, fps, w, h)
+    flow = -frame_id * (config.FLOW_SPEED / 3)
 
-    flow = 0.0
-    frame_id = 0
+    seg_count = len(files) - 1
 
-    for i in range(len(files) - 1):
+    for seg in range(start_seg, seg_count):
 
-        kfb_b = load_kfb(files[i + 1])
+        if segment_path(seg).exists():
+            print(f"[skip] segment {seg} exists")
+            kfb_b = load_kfb(files[seg + 1])
+            cache_b = build_render_cache(kfb_b)
+            kfb_a, cache_a = kfb_b, cache_b
+            continue
+
+        print(f"[render] segment {seg}/{seg_count}")
+
+        kfb_b = load_kfb(files[seg + 1])
         cache_b = build_render_cache(kfb_b)
 
         z0 = kfb_a.log_zoom
         z1 = kfb_b.log_zoom
 
-        segment_frames = fps
-        dz = (z1 - z0) / segment_frames
-        scale_step = 10 ** dz
-        scale = 1.0
+        writer = create_encoder(str(segment_path(seg)), fps, w, h)
 
-        for f in range(segment_frames):
+        start_frame = frame_id % segment_size if seg == start_seg else 0
+
+        if seg != start_seg:
+            frame_id = seg * segment_size
+
+        for f in range(start_frame, segment_size):
 
             clock.start("colorize")
             colorize(cache_a, flow, frame_buf)
             clock.end("colorize")
 
+            t = f / segment_size
+            z = lerp(z0, z1, t)
+            scale = 10 ** (z - z0)
+
             clock.start("zoom")
             frame = zoom(frame_buf, scale)
             clock.end("zoom")
 
-            flow -= config.FLOW_SPEED / 3
+            flow -= config.FLOW_SPEED
 
             clock.start("ffmpeg_write")
             writer.stdin.write(frame.tobytes())
             clock.end("ffmpeg_write")
 
-            scale *= scale_step
             frame_id += 1
+            save_state(seg, frame_id)
+
+        writer.stdin.close()
+        writer.wait()
 
         kfb_a, cache_a = kfb_b, cache_b
 
-        clock.report(frames=segment_frames)
+        clock.report(frames=segment_size)
         clock.reset()
 
-    writer.stdin.close()
-    writer.wait()
-
-    print(f"[render] DONE - frames: {frame_id}")
+    ffmpeg_concat_segments(TMP_DIR, out)
+    print(f"[render] DONE -> {out}")
