@@ -17,7 +17,7 @@ I commonly use this tool to make zooms and wanted to publish it to allow communi
 * NumPy
 * Numba
 * OpenCV (cv2)
-* FFmpeg in PATH (For windows you can grab it from ffmpeg.org, and for mac/linux you can use homebrew or your package manager)
+* FFmpeg in PATH (For windows you can grab it from [FFmpeg](ffmpeg.org), and for mac/linux you can use homebrew or your package manager)
 
 Install dependencies:
 
