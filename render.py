@@ -389,7 +389,7 @@ def render_sequence(folder, out="out.mp4", fps=60, segment_size=100):
         if not parts:
             raise ValueError(f"No segments found in {tmp_dir}")
 
-        concat_file = tmp_dir / "concat.txt"
+        concat_file = "concat.txt"
 
         with open(concat_file, "w") as f:
             for p in parts:
