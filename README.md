@@ -18,7 +18,7 @@ I commonly use this tool to make zooms and wanted to publish it to allow communi
 * Numba
 * OpenCV (cv2)
 * FFmpeg in PATH (For windows you can grab it from [FFmpeg](https://ffmpeg.org), and for mac/linux you can use homebrew or your package manager)
-
+`
 Install dependencies:
 
 ```bash
@@ -36,8 +36,9 @@ Example:
 ```bash
 python3 main.py /home/user/fractals/zoom_sequence output.mp4
 ```
-
 The input folder should contain a sequence of KFB files ordered by zoom progression.
+You will also need Kalles Fraktaler in order to extract data, you can do that by following this tutorial and stopping after you have the KFB files
+[Kalles Fraktaler Tutorial](https://www.youtube.com/watch?v=UQz8azo5MWU)
 
 ## Output
 
