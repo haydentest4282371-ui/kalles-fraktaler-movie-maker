@@ -29,7 +29,7 @@ DETAIL_STRENGTH = 0.2
 # VIDEO
 # ------------------------------------------------------------
 
-CODEC = "hevc_nvenc"
+CODEC = "libx264"
 
 # NVENC presets:
 # p1 = fastest
