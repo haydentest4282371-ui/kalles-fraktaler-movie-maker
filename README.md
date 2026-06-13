@@ -178,7 +178,7 @@ Go back to Step 2.
 
 If you get an error that is not listed above:
 
-👉 Please open an issue on GitHub
+Please open an issue on GitHub
 
 Include:
 - The full error message
