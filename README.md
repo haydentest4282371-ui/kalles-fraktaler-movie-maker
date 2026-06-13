@@ -1,148 +1,200 @@
 # Kalles Fraktaler Movie Maker
 
-Kalles Fraktaler Movie Maker is a tool that turns fractal zoom keyframe files (KFB files) into smooth zoom videos (MP4).
+This program turns a folder of fractal zoom files (.kfb files) into a video (MP4).
 
-You create zoom frames using Kalles Fraktaler, then this program turns them into a finished animation.
+It does NOT create fractals.
 
----
-
-## What this program does
-
-- Turns KFB keyframe folders into zoom videos
-- Creates smooth transitions between frames
-- Supports color palette animation effects
-- Exports MP4 video files
-- Can use GPU acceleration (if available)
+You first create the fractal files using another program, then this program turns them into a video.
 
 ---
 
-## Requirements
+# What you are doing (simple explanation)
 
-Before starting, install:
+You will:
 
-- Python 3.10 or newer → https://www.python.org/downloads/
-- FFmpeg → https://ffmpeg.org/download.html
-
-You do NOT need to manually install Python libraries — the setup step handles it.
+1. Make fractal zoom files using a tool called Kalles Fraktaler
+2. Put those files in a folder
+3. Run this program once
+4. Get a video file
 
 ---
 
-## Installation (Windows)
+# What you need
 
-### 1. Install Python
+You need:
 
-1. Download Python from:
+- Python (a program that runs this tool)
+- FFmpeg (a video tool)
+- A folder of .kfb files (your fractal images)
+
+---
+
+# Step 1: Install Python
+
+1. Go to this website:
    https://www.python.org/downloads/
 
-2. Run the installer
+2. Click the big download button
 
-3. IMPORTANT: Check:
-   [x] Add Python to PATH
+3. Open the file you downloaded
 
-4. Click Install
+4. VERY IMPORTANT:
+   Check this box:
+   ☑ Add Python to PATH
 
----
-
-### 2. Download the project
-
-1. Download or clone this repository
-2. Extract the ZIP file
-3. Open the extracted folder
+5. Click Install
 
 ---
 
-### 3. Install dependencies
+# Step 2: Install FFmpeg (Windows only needs attention here)
 
-Open Command Prompt inside the project folder:
+## Windows
 
-- Click the folder path bar
-- Type `cmd`
-- Press Enter
+1. Go here:
+   https://www.gyan.dev/ffmpeg/builds/
 
-Then run:
+2. Download:
+   “ffmpeg-git-full.7z”
 
-py -m pip install numpy numba opencv-python mpmath
+3. Open it and extract it (like a ZIP file)
 
----
+4. Move the folder to:
+   C:\ffmpeg
 
-## How to run
+5. Inside it, you should see:
+   C:\ffmpeg\bin\ffmpeg.exe
 
-Run this inside the project folder:
+6. Add it to PATH:
+   - Press Windows key
+   - Type: environment variables
+   - Click: Edit the system environment variables
+   - Click: Environment Variables
+   - Click Path → Edit
+   - Click New
+   - Add this:
+     C:\ffmpeg\bin
+   - Click OK
 
-py main.py <kfb_folder> <output_video>
+7. Test it:
+   Open Command Prompt and type:
 
----
+   ffmpeg -version
 
-### Example:
-
-py main.py C:\Users\You\fractals\zoom_sequence output.mp4
-
----
-
-## Input format
-
-The input folder must contain a sequence of .kfb files.
-
-They should be ordered in zoom progression:
-frame 1 → deeper zoom → deeper zoom → etc.
-
----
-
-## Output
-
-The program generates an MP4 file:
-
-output.mp4
-
-You can open it with any video player.
+If you see text, it worked.
 
 ---
 
-## Settings
-
-Edit configuration in:
-
-config.py
-
-Options include:
-- Color palette
-- Animation speed
-- Frame smoothing
-- Render quality
-
----
-
-## Common problems
-
-### "No module named mpmath"
+## Linux
 
 Run:
 
-py -m pip install mpmath
-
-If it still fails, you are installing into a different Python version.
+sudo apt install ffmpeg
 
 ---
 
-### "python not recognized"
+## macOS
 
-Use:
+Run:
 
-py
-
-instead of python or python3.
+brew install ffmpeg
 
 ---
 
-### FFmpeg not found
+# Step 3: Install required Python tools
 
-Install FFmpeg and add it to PATH:
-https://ffmpeg.org/download.html
+Open a terminal inside the project folder and run:
+
+pip install numpy numba opencv-python mpmath
 
 ---
 
-## Notes
+# Step 4: Create your fractal files (.kfb)
 
-- Higher resolution = slower rendering
-- GPU acceleration requires CUDA
-- CPU fallback works automatically if GPU is not available
+You must create these using Kalles Fraktaler.
+
+Follow this video:
+
+https://www.youtube.com/watch?v=UQz8azo5MWU
+
+IMPORTANT:
+
+Watch ONLY until you have your .kfb files.
+
+Stop before any video rendering steps in the video.
+
+This program replaces that step.
+
+At the end, you should have a folder like:
+
+frame_001.kfb
+frame_002.kfb
+frame_003.kfb
+...
+
+---
+
+# Step 5: Run the program
+
+Open a terminal in the project folder and run:
+
+python main.py <kfb_folder> <output_video>
+
+---
+
+# Example
+
+python main.py zooms output.mp4
+
+---
+
+# What the command means
+
+- <kfb_folder> = folder that has your .kfb files
+- output.mp4 = the video file that will be created
+
+---
+
+# When it is done
+
+You will get a video file called:
+
+output.mp4
+
+You can open it like any normal video.
+
+---
+
+# If something goes wrong
+
+## It says “python not found”
+
+Try:
+
+python3
+
+---
+
+## It says missing module
+
+Run:
+
+pip install numpy numba opencv-python mpmath
+
+---
+
+## It says ffmpeg not found
+
+FFmpeg is not installed correctly or not added to PATH.
+
+Go back to Step 2.
+
+---
+
+# Final note
+
+If you follow the steps exactly, it will work.
+
+If something breaks, it is almost always:
+- Python not installed correctly
+- FFmpeg not installed correctly
+- Wrong folder given to the program
