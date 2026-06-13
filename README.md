@@ -65,7 +65,7 @@ You should see a version number of 3.10 or higher.
 Open Command Prompt (Windows) or Terminal (macOS/Linux) inside the project folder and run:
 
 ```bash
-pip install numpy numba opencv-python
+pip install numpy numba opencv-python mpmath
 ```
 
 ## Usage
