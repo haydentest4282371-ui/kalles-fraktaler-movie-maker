@@ -1,118 +1,148 @@
 # Kalles Fraktaler Movie Maker
 
-Kalles Fraktaler Movie Maker is a tool for creating zoom movies from Kalles Fraktaler keyframe files.
+Kalles Fraktaler Movie Maker is a tool that turns fractal zoom keyframe files (KFB files) into smooth zoom videos (MP4).
 
-I use this tool for my own zoom renders and decided to publish it so others can use it, contribute improvements, and experiment with their own fractal animations.
+You create zoom frames using Kalles Fraktaler, then this program turns them into a finished animation.
 
-## Features
+---
 
-* Render zoom sequences from KFB files
-* Animated palette flow effects
-* Directional lighting based on iteration gradients
-* Smooth interpolation between keyframes
-* MP4 video output
-* Multi-threaded rendering using Numba JIT
-* GPU rendering using Numba CUDA
+## What this program does
+
+- Turns KFB keyframe folders into zoom videos
+- Creates smooth transitions between frames
+- Supports color palette animation effects
+- Exports MP4 video files
+- Can use GPU acceleration (if available)
+
+---
 
 ## Requirements
 
-* Python 3.10 or newer
-* NumPy
-* Numba
-* OpenCV (`cv2`)
-* FFmpeg available from the command line
+Before starting, install:
 
-For Windows, FFmpeg can be downloaded from https://ffmpeg.org.
+- Python 3.10 or newer → https://www.python.org/downloads/
+- FFmpeg → https://ffmpeg.org/download.html
 
-For macOS and Linux, FFmpeg can usually be installed using Homebrew or your system package manager.
+You do NOT need to manually install Python libraries — the setup step handles it.
 
-## Setup
+---
 
-### Step 1: Install Python
+## Installation (Windows)
 
-Python is required to run this program.
+### 1. Install Python
 
-**Windows**
+1. Download Python from:
+   https://www.python.org/downloads/
 
-1. Go to https://www.python.org/downloads/
-2. Download Python 3.10 or newer.
-3. Run the installer.
-4. Check **"Add Python to PATH"**.
-5. Click **Install**.
+2. Run the installer
 
-**macOS / Linux**
+3. IMPORTANT: Check:
+   [x] Add Python to PATH
 
-Install Python 3.10 or newer using Homebrew or your system package manager.
+4. Click Install
 
-### Verify Python Installation
+---
 
-Open Command Prompt (Windows) or Terminal (macOS/Linux) and run:
+### 2. Download the project
 
-```bash
-python --version
-```
+1. Download or clone this repository
+2. Extract the ZIP file
+3. Open the extracted folder
 
-You should see a version number of 3.10 or higher.
+---
 
-### Step 2: Download the Program
+### 3. Install dependencies
 
-1. Download this repository as a ZIP file.
-2. Extract the ZIP file.
-3. Open the extracted folder.
+Open Command Prompt inside the project folder:
 
-### Step 3: Install Dependencies
+- Click the folder path bar
+- Type `cmd`
+- Press Enter
 
-Open Command Prompt (Windows) or Terminal (macOS/Linux) inside the project folder and run:
+Then run:
 
-```bash
-pip install numpy numba opencv-python mpmath
-```
+py -m pip install numpy numba opencv-python mpmath
 
-## Usage
+---
 
-```bash
-python3 main.py <kfb_folder> <output_video>
-```
+## How to run
 
-Example:
+Run this inside the project folder:
 
-```bash
-python3 main.py /home/user/fractals/zoom_sequence output.mp4
-```
+py main.py <kfb_folder> <output_video>
 
-The input folder should contain a sequence of KFB files ordered by zoom progression.
+---
 
-You will also need Kalles Fraktaler to create the KFB files. You can follow this tutorial and stop once you have exported your KFB sequence:
+### Example:
 
-https://www.youtube.com/watch?v=UQz8azo5MWU
+py main.py C:\Users\You\fractals\zoom_sequence output.mp4
+
+---
+
+## Input format
+
+The input folder must contain a sequence of .kfb files.
+
+They should be ordered in zoom progression:
+frame 1 → deeper zoom → deeper zoom → etc.
+
+---
 
 ## Output
 
-The renderer generates an MP4 video containing the completed zoom animation.
+The program generates an MP4 file:
 
-Example:
+output.mp4
 
-```bash
-python3 main.py zooms/mandelbrot mandelbrot.mp4
-```
+You can open it with any video player.
 
-## Configuration
+---
 
-Rendering options can be modified in `config.py`.
+## Settings
 
-Examples include:
+Edit configuration in:
 
-* Palette selection
-* Palette flow speed
-* Fade-to-black behavior
-* Frame interpolation settings
+config.py
+
+Options include:
+- Color palette
+- Animation speed
+- Frame smoothing
+- Render quality
+
+---
+
+## Common problems
+
+### "No module named mpmath"
+
+Run:
+
+py -m pip install mpmath
+
+If it still fails, you are installing into a different Python version.
+
+---
+
+### "python not recognized"
+
+Use:
+
+py
+
+instead of python or python3.
+
+---
+
+### FFmpeg not found
+
+Install FFmpeg and add it to PATH:
+https://ffmpeg.org/download.html
+
+---
 
 ## Notes
 
-* Rendering speed depends heavily on image resolution, sequence length, and hardware performance.
-* The renderer is optimized for GPU execution using Numba CUDA.
-* A CPU implementation is also included in `cpu.py` for systems without CUDA support.
-
-## License
-
-See the repository license file for details.
+- Higher resolution = slower rendering
+- GPU acceleration requires CUDA
+- CPU fallback works automatically if GPU is not available
