@@ -98,7 +98,7 @@ def _get_frame_bufs(h, w):
 @cuda.jit
 def colorize_core(base_phase, lighting, iters, max_iter, cols, flow,
                   black_towards_end, black_start, black_strength,
-                  out, inv_tau, ncol):
+                  out, inv_tau, ncol, period):
 
     x, y = cuda.grid(2)
     h, w = base_phase.shape
@@ -111,7 +111,7 @@ def colorize_core(base_phase, lighting, iters, max_iter, cols, flow,
         out[y, x, 2] = 0
         return
 
-    bp = base_phase[y, x]
+    bp = base_phase[y, x] /period
     lt = lighting[y, x]
 
     u = bp * inv_tau + flow
@@ -193,6 +193,7 @@ def colorize(cache, flow, d_out):
         d_out,
         inv_tau,
         ncol,
+        config.PERIOD
     )
 
     return d_out
@@ -356,7 +357,7 @@ def render_sequence(folder, out="out.mp4", fps=60, segment_size=100):
             # -----------------------
             # FLOW
             # -----------------------
-            flow -= config.FLOW_SPEED / 3
+            flow -= config.FLOW_SPEED
 
             # -----------------------
             # WRITE FRAME
@@ -380,16 +381,15 @@ def render_sequence(folder, out="out.mp4", fps=60, segment_size=100):
     # ----------------------------
     # CONCAT FINAL OUTPUT (LOSSLESS)
     # ----------------------------
-    print("[render] concatenating segments...")
 
-        def ffmpeg_concat_segments(tmp_dir, out_path):
+    def ffmpeg_concat_segments(tmp_dir, out_path):
         tmp_dir = Path(tmp_dir)
 
         parts = sorted(tmp_dir.glob("part_*.mp4"))
         if not parts:
             raise ValueError(f"No segments found in {tmp_dir}")
 
-        concat_file = "concat.txt"
+        concat_file = tmp_dir / "concat.txt"
 
         with open(concat_file, "w") as f:
             for p in parts:
