@@ -214,6 +214,9 @@ def ffmpeg_concat_segments(tmp_dir, out_path):
 # -------------------------------------------------------------------
 
 def render_sequence(folder, out="out.mp4", fps=60, segment_size=100):
+    import json
+    from pathlib import Path
+    import subprocess
 
     STATE_FILE = Path(config.STATE_FILE)
     TMP_DIR = Path(config.TMP)
@@ -246,19 +249,19 @@ def render_sequence(folder, out="out.mp4", fps=60, segment_size=100):
     cache_a = build_render_cache(kfb_a)
 
     h, w = cache_a[1].shape
-    frame_buf = np.empty((h, w, 3), dtype=np.uint8)
+    pinned, d_out = _get_frame_bufs(h, w)
 
     flow = -frame_id * (config.FLOW_SPEED / 3)
 
     seg_count = len(files) - 1
 
+    # ----------------------------
+    # SEGMENT LOOP
+    # ----------------------------
     for seg in range(start_seg, seg_count):
 
         if segment_path(seg).exists():
             print(f"[skip] segment {seg} exists")
-            kfb_b = load_kfb(files[seg + 1])
-            cache_b = build_render_cache(kfb_b)
-            kfb_a, cache_a = kfb_b, cache_b
             continue
 
         print(f"[render] segment {seg}/{seg_count}")
@@ -269,34 +272,57 @@ def render_sequence(folder, out="out.mp4", fps=60, segment_size=100):
         z0 = kfb_a.log_zoom
         z1 = kfb_b.log_zoom
 
-        writer = create_encoder(str(segment_path(seg)), fps, w, h)
+        writer = create_encoder(
+            str(segment_path(seg)),
+            fps,
+            w,
+            h,
+            codec="hevc_nvenc"
+        )
 
         start_frame = frame_id % segment_size if seg == start_seg else 0
 
+        # reset frame_id once we leave first segment
         if seg != start_seg:
             frame_id = seg * segment_size
 
-        for f in range(start_frame, segment_size):
+        segment_frames = segment_size
 
+        for f in range(start_frame, segment_frames):
+
+            # -----------------------
+            # GPU COLORIZE
+            # -----------------------
             clock.start("colorize")
-            colorize(cache_a, flow, frame_buf)
+            colorize(cache_a, flow, d_out)
+            d_out.copy_to_host(pinned)
             clock.end("colorize")
 
-            t = f / segment_size
+            # -----------------------
+            # ZOOM
+            # -----------------------
+            t = f / segment_frames
             z = lerp(z0, z1, t)
             scale = 10 ** (z - z0)
 
             clock.start("zoom")
-            frame = zoom(frame_buf, scale)
+            frame = zoom(pinned, scale)
             clock.end("zoom")
 
+            # -----------------------
+            # FLOW
+            # -----------------------
             flow -= config.FLOW_SPEED
 
+            # -----------------------
+            # WRITE FRAME
+            # -----------------------
             clock.start("ffmpeg_write")
             writer.stdin.write(frame.tobytes())
             clock.end("ffmpeg_write")
 
             frame_id += 1
+
             save_state(seg, frame_id)
 
         writer.stdin.close()
@@ -304,8 +330,36 @@ def render_sequence(folder, out="out.mp4", fps=60, segment_size=100):
 
         kfb_a, cache_a = kfb_b, cache_b
 
-        clock.report(frames=segment_size)
+        clock.report(frames=segment_frames)
         clock.reset()
 
+    # ----------------------------
+    # CONCAT FINAL OUTPUT (LOSSLESS)
+    # ----------------------------
+
+    def ffmpeg_concat_segments(tmp_dir, out_path):
+        tmp_dir = Path(tmp_dir)
+
+        parts = sorted(tmp_dir.glob("part_*.mp4"))
+        if not parts:
+            raise ValueError(f"No segments found in {tmp_dir}")
+
+        concat_file = tmp_dir / "concat.txt"
+
+        with open(concat_file, "w") as f:
+            for p in parts:
+                f.write(f"file '{p.resolve().as_posix()}'\n")
+
+        subprocess.run([
+            "ffmpeg",
+            "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(concat_file),
+            "-c", "copy",
+            str(out_path)
+        ], check=True)
+
     ffmpeg_concat_segments(TMP_DIR, out)
+
     print(f"[render] DONE -> {out}")
