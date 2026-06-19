@@ -6,6 +6,8 @@ It does NOT create fractals.
 
 You first create the fractal files using another program, then this program turns them into a video.
 
+Here is a demo of what this is capable of: https://youtu.be/EIwj5wblA4U
+
 ---
 
 # What you are doing (simple explanation)
