@@ -16,17 +16,6 @@ This project is a standalone Python tool for making fractal zoom videos using Ka
 
 ---
 
-## Branch naming
-
-Please use one of the following prefixes:
-
-- `feature/` → new features
-- `fix/` → bug fixes
-- `refactor/` → code improvements without behavior changes
-- `experimental/` → unstable or test work
-
----
-
 ## AMD / GPU support
 
 AMD GPUs are currently unsupported.
