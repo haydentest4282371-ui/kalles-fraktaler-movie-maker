@@ -6,22 +6,13 @@ This project is a standalone Python tool for making fractal zoom videos using Ka
 
 ---
 
-## Project Structure
-
-- `main` → stable releases
-- `community` → integration branch for reviewed changes
-- `feature/*` → individual development branches (usually in forks)
-
----
-
 ## How to contribute
 
 1. Fork this repository
 2. Create a feature branch in your fork: feature/your-change-name
 3. Make your changes
 4. Test your changes locally (make sure nothing breaks KFB loading/rendering)
-5. Push your branch to your fork
-6. Open a Pull Request into the `community` branch
+5. Open a Pull Request into the `community` branch
 
 ---
 
@@ -38,7 +29,7 @@ Please use one of the following prefixes:
 
 ## AMD / GPU support
 
-AMD GPU support is currently incomplete and may lag behind the NVIDIA/CUDA implementation.
+AMD GPUs are currently unsupported.
 
 Contributions are welcome to improve compatibility, including:
 - Porting CUDA kernels to ROCm/HIP or OpenCL
