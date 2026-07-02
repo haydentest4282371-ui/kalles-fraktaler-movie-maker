@@ -11,7 +11,7 @@ This project is a standalone Python tool for making fractal zoom videos using Ka
 1. Fork this repository
 2. Create a feature branch in your fork: feature/your-change-name
 3. Make your changes
-4. Test your changes locally (make sure nothing breaks KFB loading/rendering)
+4. Test your changes locally
 5. Open a Pull Request into the `community` branch
 
 ---
