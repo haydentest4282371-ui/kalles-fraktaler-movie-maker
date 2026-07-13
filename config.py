@@ -1,10 +1,10 @@
 import cv2
 FPS = 60
-FRAMES_PER_KEYFRAME = FPS*1.5
+FRAMES_PER_KEYFRAME = 60
 
 SHADING_DIVISOR=3
 
-
+USE_RFF=False
 
 OUTPUT = "mandelbrot.mp4"
 TMP="tmp"
@@ -46,19 +46,33 @@ CQ = 22
 
 INTERPOLATION = cv2.INTER_AREA
 
+# base settings (required by all)
 USER_FLOW_SPEED=1
-PERIOD = 100
+PERIOD = 200
 FLOW_SPEED = USER_FLOW_SPEED/FPS/PERIOD
+
+# contour settings
 PALETTE_GROUPS=8
 CONTOURS=4
-CONTOUR_LIFT=1.2
-CONTOUR_WIDTH=0.3
+CONTOUR_LIFT=1.6
+CONTOUR_WIDTH=0.2
 FADE_WIDTH=0.2
 SECTION_REPEAT  = 6     # sections per color slot
 SECTION_DARKEN  = 0   # brightness lost per section (0.2 = each section 20% darker than previous)
 
-# standard equals direct palette mapping and contour does darkening layering with contours
-COLORING= "contour"
+# audio responsive settings
+AUDIO_PHASE_STRENGTH = 2  # palette shift driven by RMS
+AUDIO_SMOOTH = 0.85
+AUDIO_USE_INTERPOLATION = True
+AUDIO_INTERP = 0.95
+AUDIO_LOWPASS_ENABLE = True
+AUDIO_LOWPASS_CUTOFF = 3500  # Hz
+AUDIO_PATH="/home/hayden/Videos/editing/mandelaudio.mp3"
+AUDIO_BASE_COLORING="contour" # coloring method to layer audio on top of
+AUDIO_MODULATED_VALUES=["CONTOUR_WIDTH",] # accepts any value in config
+
+# standard equals direct palette mapping and contour does darkening layering with contours (any values put here will be overriden by audio if audio coloring is used)
+COLORING= "audio"
 PALETTE = "retro_days_stripped"
 PALETTES = {
 
