@@ -3,9 +3,10 @@ import numpy as np
 import subprocess
 import math
 import cv2
-from kfb import KFB
+from frame_loader import discover_frames, load_frame
 import config
 from numba import cuda
+from numba import njit, prange
 import time
 import coloring
 
@@ -13,24 +14,16 @@ inv_tau = 1 / (2 * math.pi)
 
 
 def discover(folder):
-    folder = Path(folder).expanduser().resolve()
-    if not folder.exists():
-        raise ValueError(f"[discover] Folder does not exist: {folder}")
-    files = sorted(folder.glob("*.kfb"))
-    if len(files) == 0:
-        raise ValueError(f"[discover] No .kfb files found in: {folder}")
-    files.reverse()
-    return files
+    target_ext = ".rfm" if config.USE_RFF else ".kfb"
+    files, ext = discover_frames(folder, extension=target_ext)
+    return files, ext
 
 
 def load_kfb(path):
-    path = Path(path).expanduser().resolve()
-    if not path.exists():
-        raise ValueError(f"[load_kfb] File not found: {path}")
     try:
-        k = KFB(str(path))
-        k.read()
-        return k
+        return load_frame(path)
+    except ValueError:
+        raise
     except Exception as e:
         raise ValueError(f"[load_kfb] Failed to load: {path}\n{e}")
 
@@ -99,7 +92,10 @@ def build_render_cache(kfb, light_angle=0.7):
     base_phase = kfb.smooth.astype(np.float32) / float(max(kfb.colour_div, 1))
     d_base_phase = cuda.to_device(base_phase)
 
-    d_iters = cuda.to_device(kfb.iter)
+    iters = kfb.iter.astype(np.float32)
+    if config.USE_RFF:
+        iters *= iters          # undo RFF's square root export
+    d_iters = cuda.to_device(iters)
 
     # d_smooth no longer needed after lighting is computed
     return d_lighting, d_base_phase, d_iters, kfb.max_iter
@@ -119,13 +115,13 @@ def zoom(img, scale):
     return cv2.resize(crop, (w, h), interpolation=config.INTERPOLATION)
 
 
-def create_encoder(path, fps, w, h, codec="hevc_nvenc"):
+def create_encoder(path, w, h):
     cmd = [
         "ffmpeg", "-y",
         "-f", "rawvideo", "-vcodec", "rawvideo",
-        "-pix_fmt", "rgb24", "-s", f"{w}x{h}", "-r", str(fps),
+        "-pix_fmt", "rgb24", "-s", f"{w}x{h}", "-r", str(config.FPS),
         "-i", "-",
-        "-an", "-vcodec", codec,
+        "-an", "-vcodec", config.CODEC,
         "-pix_fmt", "yuv420p",
         "-cq", str(config.CQ), "-crf", str(config.CQ),
         path
@@ -137,7 +133,7 @@ def create_encoder(path, fps, w, h, codec="hevc_nvenc"):
 # MAIN RENDER
 # -------------------------------------------------------------------
 
-def render_sequence(folder, out="out.mp4", fps=60, segment_size=100):
+def render_sequence(folder, out="out.mp4", segment_size=100):
     import json
     from pathlib import Path
     import subprocess
@@ -163,8 +159,8 @@ def render_sequence(folder, out="out.mp4", fps=60, segment_size=100):
 
     clock = StageClock()
 
-    files = discover(folder)
-    print(f"[render] Found {len(files)} KFB files")
+    files, ext = discover(folder)
+    print(f"[render] Found {len(files)} {ext} files")
 
     start_seg, frame_id = load_state()
     print(f"[render] Resuming at segment={start_seg}, frame={frame_id}")
@@ -175,7 +171,7 @@ def render_sequence(folder, out="out.mp4", fps=60, segment_size=100):
     h, w = cache_a[1].shape
     pinned, d_out = coloring._get_frame_bufs(h, w)
 
-    flow = -frame_id * (config.FLOW_SPEED / 3)
+    flow = -frame_id * config.FLOW_SPEED
 
     seg_count = len(files) - 1
 
@@ -197,11 +193,9 @@ def render_sequence(folder, out="out.mp4", fps=60, segment_size=100):
         z1 = kfb_b.log_zoom
 
         writer = create_encoder(
-            str(segment_path(seg)),
-            fps,
-            w,
-            h,
-            codec="hevc_nvenc"
+            path=str(segment_path(seg)),
+            w=w,
+            h=h
         )
 
         start_frame = frame_id % segment_size if seg == start_seg else 0
@@ -222,11 +216,15 @@ def render_sequence(folder, out="out.mp4", fps=60, segment_size=100):
                 coloring.colorize(cache_a, flow, d_out)
             elif config.COLORING == "contour":
                 coloring.colorize_contour(cache_a,flow,d_out)
+            elif config.COLORING == "audio":
+                coloring.colorize_audio(cache_a,flow,d_out)
+            elif config.COLORING == "image":
+                coloring.colorize_image(cache_a,flow,d_out)
             d_out.copy_to_host(pinned)
             clock.end("colorize")
 
             # -----------------------
-            # ZOOM
+            # ZOOMd
             # -----------------------
             try:
                 t = f / segment_frames
