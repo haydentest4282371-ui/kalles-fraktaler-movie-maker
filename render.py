@@ -9,8 +9,57 @@ from numba import cuda
 from numba import njit, prange
 import time
 import coloring
+import pygame
 
 inv_tau = 1 / (2 * math.pi)
+
+_preview_screen = None
+_preview_w = None
+_preview_h = None
+
+
+def init_preview(w, h, max_dim=900):
+    """Initialize a pygame window for live preview, scaled down if needed."""
+    global _preview_screen, _preview_w, _preview_h
+
+    scale = min(1.0, max_dim / max(w, h))
+    pw, ph = max(1, int(w * scale)), max(1, int(h * scale))
+
+    pygame.init()
+    _preview_screen = pygame.display.set_mode((pw, ph))
+    pygame.display.set_caption("Render Preview")
+    _preview_w, _preview_h = pw, ph
+
+
+def update_preview(frame_rgb):
+    """Push an RGB24 (H,W,3) numpy frame to the pygame preview window."""
+    global _preview_screen, _preview_w, _preview_h
+
+    if _preview_screen is None:
+        return True  # preview not initialized, just continue
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            return False
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+            return False
+
+    # pygame surfarray expects (W, H, 3), our frame is (H, W, 3)
+    surf = pygame.surfarray.make_surface(np.transpose(frame_rgb, (1, 0, 2)))
+
+    if (_preview_w, _preview_h) != frame_rgb.shape[1::-1]:
+        surf = pygame.transform.smoothscale(surf, (_preview_w, _preview_h))
+
+    _preview_screen.blit(surf, (0, 0))
+    pygame.display.flip()
+    return True
+
+
+def close_preview():
+    global _preview_screen
+    if _preview_screen is not None:
+        pygame.quit()
+        _preview_screen = None
 
 
 def discover(folder):
@@ -133,7 +182,7 @@ def create_encoder(path, w, h):
 # MAIN RENDER
 # -------------------------------------------------------------------
 
-def render_sequence(folder, out="out.mp4", segment_size=100):
+def render_sequence(folder, out="out.mp4", segment_size=100, preview=True):
     import json
     from pathlib import Path
     import subprocess
@@ -171,14 +220,22 @@ def render_sequence(folder, out="out.mp4", segment_size=100):
     h, w = cache_a[1].shape
     pinned, d_out = coloring._get_frame_bufs(h, w)
 
+    if preview:
+        init_preview(w, h)
+
     flow = -frame_id * config.FLOW_SPEED
 
     seg_count = len(files) - 1
+
+    aborted = False
 
     # ----------------------------
     # SEGMENT LOOP
     # ----------------------------
     for seg in range(start_seg, seg_count):
+
+        if aborted:
+            break
 
         if segment_path(seg).exists():
             print(f"[skip] segment {seg} exists")
@@ -236,6 +293,18 @@ def render_sequence(folder, out="out.mp4", segment_size=100):
                 clock.end("zoom")
 
                 # -----------------------
+                # LIVE PREVIEW
+                # -----------------------
+                if preview:
+                    clock.start("preview")
+                    keep_going = update_preview(frame)
+                    clock.end("preview")
+                    if not keep_going:
+                        print("[render] Preview window closed by user, aborting render loop.")
+                        aborted = True
+                        break
+
+                # -----------------------
                 # FLOW
                 # -----------------------
                 flow -= config.FLOW_SPEED
@@ -258,6 +327,13 @@ def render_sequence(folder, out="out.mp4", segment_size=100):
 
         clock.report(frames=segment_frames)
         clock.reset()
+
+    if preview:
+        close_preview()
+
+    if aborted:
+        print(f"[render] ABORTED at segment {seg}")
+        return
 
     # ----------------------------
     # CONCAT FINAL OUTPUT (LOSSLESS)
