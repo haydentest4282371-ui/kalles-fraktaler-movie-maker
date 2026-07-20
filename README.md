@@ -1,158 +1,29 @@
-# Kalles Fraktaler Movie Maker
+This is a program which uses either .kfb or .rfm files generated from Kalles Fraktaler or from RFF
 
-This program turns a folder of fractal zoom files (.kfb files) into a video (MP4).
+## How to use/setup this program
 
-It does NOT create fractals.
+# Installing Python
 
-You first create the fractal files using another program, then this program turns them into a video.
+To setup ths program you will first need to install Python
+You will need at least Python 3.10
 
-Here is a demo of what this is capable of: https://youtu.be/EIwj5wblA4U
+For Windows you can find Python on the Microsoft store
+For MacOS you can install Python from Homebrew
+For Linux you can install Python from your OS's package manager
 
----
+# Installing libraries
 
-# What you are doing (simple explanation)
+The libraries needed can be installed with a simple command:
+```
+pip install numpy numba opencv-python pygame mpmath librosa scipy
+```
 
-You will:
+# Running the program
 
-1. Make fractal zoom files using Kalles Fraktaler
-2. Put those files in a folder
-3. Run this program once
-4. Get a video file
-
----
-
-# What you need
-
-You need:
-
-- Python (runs this program)
-- FFmpeg (creates the video)
-- A folder of .kfb files (your fractal frames)
-
----
-
-# Step 1: Install Python
-
-1. Go to:
-   https://www.python.org/downloads/
-
-2. Download and install Python
-
-3. IMPORTANT:
-   Check this box:
-   ☑ Add Python to PATH
-
----
-
-# Step 2: Install FFmpeg
-
-## Windows
-
-1. Go to:
-   https://www.gyan.dev/ffmpeg/builds/
-
-2. Download:
-   “ffmpeg-git-full.7z”
-
-3. Extract it
-
-4. Move it to:
-   C:\ffmpeg
-
-5. Make sure this file exists:
-   C:\ffmpeg\bin\ffmpeg.exe
-
-6. Add to PATH:
-   - Search “environment variables”
-   - Open “Edit the system environment variables”
-   - Click “Environment Variables”
-   - Find “Path”
-   - Click Edit → New
-   - Add:
-     C:\ffmpeg\bin
-
-7. Test it:
-
-   ffmpeg -version
-
-If it prints text, it works.
-
----
-
-## Linux
-
-sudo apt install ffmpeg
-
----
-
-## macOS
-
-brew install ffmpeg
-
----
-
-# Step 3: Install Python libraries
-
-Open a terminal in the project folder:
-
-pip install numpy numba opencv-python mpmath
-
----
-
-# Step 4: Create .kfb files
-
-You must create these using Kalles Fraktaler.
-
-Watch this tutorial:
-
-https://www.youtube.com/watch?v=UQz8azo5MWU
-
-IMPORTANT:
-
-Only follow the tutorial until you have the .kfb files.
-
-STOP before any video rendering steps.
-
-This program replaces that part.
-
-You should end with files like:
-
-frame_001.kfb
-frame_002.kfb
-frame_003.kfb
-...
-
----
-
-# Step 5: Run the program
-
-Run:
-
-python main.py <kfb_folder> <output_video>
-
----
-
-# Example
-
-python main.py zooms output.mp4
-
----
-
-# What the command means
-
-- <kfb_folder> = folder containing .kfb files
-- output.mp4 = video file that will be created
-
----
-
-# When it works
-
-You will get:
-
-output.mp4
-
----
-
+To run the program simply run:
+```
+python3 main.py path/to/kfb/files output.mp4
+```
 # If something goes wrong
 
 ## Python not found
@@ -165,7 +36,7 @@ python3
 ## Missing module
 Run:
 
-pip install numpy numba opencv-python mpmath
+pip install numpy numba opencv-python mpmath pygame sci[y
 
 ---
 
