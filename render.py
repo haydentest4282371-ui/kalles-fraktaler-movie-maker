@@ -206,6 +206,95 @@ def render_sequence(folder, out="out.mp4", segment_size=100, preview=True):
     def segment_path(i):
         return TMP_DIR / f"part_{i:05d}.mp4"
 
+    def render_color(cache):
+        if config.COLORING == "standard":
+            coloring.colorize(cache, flow, d_out)
+        elif config.COLORING == "contour":
+            coloring.colorize_contour(cache, flow, d_out)
+        elif config.COLORING == "audio":
+            coloring.colorize_audio(cache, flow, d_out)
+        elif config.COLORING == "image":
+            coloring.colorize_image(cache, flow, d_out)
+        elif config.COLORING == "void":
+            coloring.colorize_void(cache, flow, d_out)
+
+        d_out.copy_to_host(pinned)
+
+    def resize_layer(img, scale):
+        h0, w0 = img.shape[:2]
+
+        new_w = max(1, int(w0 * scale))
+        new_h = max(1, int(h0 * scale))
+
+        return cv2.resize(
+            img,
+            (new_w, new_h),
+            interpolation=config.INTERPOLATION
+        )
+
+
+    def paste_center(base, layer):
+        h0, w0 = base.shape[:2]
+        h1, w1 = layer.shape[:2]
+
+        x = (w0 - w1) // 2
+        y = (h0 - h1) // 2
+
+        x0 = max(0, x)
+        y0 = max(0, y)
+
+        x1 = min(w0, x + w1)
+        y1 = min(h0, y + h1)
+
+        lx0 = x0 - x
+        ly0 = y0 - y
+
+        lx1 = lx0 + (x1 - x0)
+        ly1 = ly0 + (y1 - y0)
+
+        roi = base[y0:y1, x0:x1]
+        overlay = layer[ly0:ly1, lx0:lx1]
+
+        blend = config.SEAM_BLEND
+
+        if blend <= 0:
+            roi[:] = overlay
+            return
+
+        h, w = overlay.shape[:2]
+
+        yy, xx = np.indices((h, w))
+
+        edge = np.minimum.reduce([
+            xx,
+            yy,
+            w - 1 - xx,
+            h - 1 - yy
+        ]).astype(np.float32)
+
+        alpha = np.clip(
+            edge / blend,
+            0.0,
+            1.0
+        )
+
+        alpha = alpha[..., None]
+
+        roi[:] = (
+            overlay.astype(np.float32) * alpha +
+            roi.astype(np.float32) * (1.0 - alpha)
+        ).astype(np.uint8)
+
+    def load_layer(index):
+        kfb = load_kfb(files[index])
+        cache = build_render_cache(kfb)
+
+        return {
+            "cache": cache,
+            "zoom": kfb.log_zoom,
+            "index": index
+        }
+
     clock = StageClock()
 
     files, ext = discover(folder)
@@ -214,10 +303,15 @@ def render_sequence(folder, out="out.mp4", segment_size=100, preview=True):
     start_seg, frame_id = load_state()
     print(f"[render] Resuming at segment={start_seg}, frame={frame_id}")
 
-    kfb_a = load_kfb(files[0])
-    cache_a = build_render_cache(kfb_a)
+    layers = []
 
-    h, w = cache_a[1].shape
+    warmup = min(config.KEYFRAMES, len(files))
+
+    for i in range(warmup):
+        layers.append(load_layer(i))
+
+    h, w = layers[0]["cache"][1].shape
+
     pinned, d_out = coloring._get_frame_bufs(h, w)
 
     if preview:
@@ -229,9 +323,6 @@ def render_sequence(folder, out="out.mp4", segment_size=100, preview=True):
 
     aborted = False
 
-    # ----------------------------
-    # SEGMENT LOOP
-    # ----------------------------
     for seg in range(start_seg, seg_count):
 
         if aborted:
@@ -243,89 +334,110 @@ def render_sequence(folder, out="out.mp4", segment_size=100, preview=True):
 
         print(f"[render] segment {seg}/{seg_count}")
 
-        kfb_b = load_kfb(files[seg + 1])
-        cache_b = build_render_cache(kfb_b)
-
-        z0 = kfb_a.log_zoom
-        z1 = kfb_b.log_zoom
-
         writer = create_encoder(
             path=str(segment_path(seg)),
             w=w,
             h=h
         )
 
-        start_frame = frame_id % segment_size if seg == start_seg else 0
+        current = layers[0]
 
-        # reset frame_id once we leave first segment
-        if seg != start_seg:
-            frame_id = seg * segment_size
+        z0 = current["zoom"]
 
-        segment_frames = segment_size
+        if len(layers) > 1:
+            z1 = layers[1]["zoom"]
+        else:
+            z1 = z0
 
-        for f in range(start_frame, segment_frames):
+        start_frame = (
+            frame_id % segment_size
+            if seg == start_seg
+            else 0
+        )
 
-            # -----------------------
-            # GPU COLORIZE
-            # -----------------------
-            clock.start("colorize")
-            if config.COLORING == "standard":
-                coloring.colorize(cache_a, flow, d_out)
-            elif config.COLORING == "contour":
-                coloring.colorize_contour(cache_a,flow,d_out)
-            elif config.COLORING == "audio":
-                coloring.colorize_audio(cache_a,flow,d_out)
-            elif config.COLORING == "image":
-                coloring.colorize_image(cache_a,flow,d_out)
-            d_out.copy_to_host(pinned)
-            clock.end("colorize")
+        for f in range(start_frame, segment_size):
 
-            # -----------------------
-            # ZOOMd
-            # -----------------------
             try:
-                t = f / segment_frames
+                t = f / segment_size
                 z = lerp(z0, z1, t)
-                scale = 10 ** (z - z0)
 
-                clock.start("zoom")
-                frame = zoom(pinned, scale)
-                clock.end("zoom")
+                # base keyframe
+                render_color(
+                    layers[0]["cache"]
+                )
 
-                # -----------------------
-                # LIVE PREVIEW
-                # -----------------------
+                frame = zoom(
+                    pinned,
+                    10 ** (z - layers[0]["zoom"])
+                )
+
+                # detail keyframes
+                for layer in layers[1:]:
+
+                    render_color(
+                        layer["cache"]
+                    )
+
+                    scale = (
+                        10 ** (z - layer["zoom"])
+                    )
+
+                    img = resize_layer(
+                        pinned,
+                        scale
+                    )
+
+                    paste_center(
+                        frame,
+                        img
+                    )
+
                 if preview:
-                    clock.start("preview")
                     keep_going = update_preview(frame)
-                    clock.end("preview")
+
                     if not keep_going:
-                        print("[render] Preview window closed by user, aborting render loop.")
+                        print("[render] Preview closed")
                         aborted = True
                         break
 
-                # -----------------------
-                # FLOW
-                # -----------------------
                 flow -= config.FLOW_SPEED
 
-                # -----------------------
-                # WRITE FRAME
-                # -----------------------
-                clock.start("ffmpeg_write")
-                writer.stdin.write(frame.tobytes())
-                clock.end("ffmpeg_write")
+                writer.stdin.write(
+                    frame.tobytes()
+                )
 
                 frame_id += 1
 
-                save_state(seg, frame_id)
-            except Exception: frame_id += 1;flow -= config.FLOW_SPEED
+                save_state(
+                    seg,
+                    frame_id
+                )
+
+            except Exception as e:
+                print("[render] frame error:", e)
+
+                frame_id += 1
+                flow -= config.FLOW_SPEED
+
         writer.stdin.close()
         writer.wait()
 
-        kfb_a, cache_a = kfb_b, cache_b
+        # slide warmup window
+        if layers:
+            layers.pop(0)
 
-        clock.report(frames=segment_frames)
+        next_index = (
+            layers[-1]["index"] + 1
+            if layers
+            else seg + warmup
+        )
+
+        if next_index < len(files):
+            layers.append(
+                load_layer(next_index)
+            )
+
+        clock.report(frames=segment_size)
         clock.reset()
 
     if preview:
@@ -335,33 +447,38 @@ def render_sequence(folder, out="out.mp4", segment_size=100, preview=True):
         print(f"[render] ABORTED at segment {seg}")
         return
 
-    # ----------------------------
-    # CONCAT FINAL OUTPUT (LOSSLESS)
-    # ----------------------------
+    parts = sorted(
+        TMP_DIR.glob("part_*.mp4")
+    )
 
-    def ffmpeg_concat_segments(tmp_dir, out_path):
-        tmp_dir = Path(tmp_dir)
+    if not parts:
+        raise ValueError(
+            f"No segments found in {TMP_DIR}"
+        )
 
-        parts = sorted(tmp_dir.glob("part_*.mp4"))
-        if not parts:
-            raise ValueError(f"No segments found in {tmp_dir}")
+    concat_file = "concat.txt"
 
-        concat_file = "concat.txt"
+    with open(concat_file, "w") as f:
+        for p in parts:
+            f.write(
+                f"file '{p.resolve().as_posix()}'\n"
+            )
 
-        with open(concat_file, "w") as f:
-            for p in parts:
-                f.write(f"file '{p.resolve().as_posix()}'\n")
-
-        subprocess.run([
+    subprocess.run(
+        [
             "ffmpeg",
             "-y",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", str(concat_file),
-            "-c", "copy",
-            str(out_path)
-        ], check=True)
-
-    ffmpeg_concat_segments(TMP_DIR, out)
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            concat_file,
+            "-c",
+            "copy",
+            str(out)
+        ],
+        check=True
+    )
 
     print(f"[render] DONE -> {out}")
