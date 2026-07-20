@@ -47,8 +47,8 @@ CQ = 22
 INTERPOLATION = cv2.INTER_AREA
 
 # base settings (required by all)
-USER_FLOW_SPEED=1
-PERIOD = 200
+USER_FLOW_SPEED=1/4
+PERIOD = 5
 FLOW_SPEED = USER_FLOW_SPEED/FPS/PERIOD
 
 # contour settings
@@ -72,8 +72,8 @@ AUDIO_BASE_COLORING="contour" # coloring method to layer audio on top of
 AUDIO_MODULATED_VALUES=["CONTOUR_WIDTH",] # accepts any value in config
 
 # standard equals direct palette mapping and contour does darkening layering with contours (any values put here will be overriden by audio if audio coloring is used)
-COLORING= "audio"
-PALETTE = "retro_days_stripped"
+COLORING= "standard"
+PALETTE = "retro_days"
 PALETTES = {
 
     # --------------------------------------------------------
