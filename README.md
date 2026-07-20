@@ -17,7 +17,7 @@ The libraries needed can be installed with a simple command:
 ```
 pip install numpy numba opencv-python pygame mpmath librosa scipy
 ```
-# Installing FFmpeg
+## Installing FFmpeg
 For Windows you can grap ffmpeg from [ffmpeg.org](here)
 For MacOS you can grab it from homebrew
 For Linux you can grab it from your distro's package manager
@@ -51,7 +51,7 @@ Go back to Step 2.
 
 ---
 
-# If you still have problems
+## If you still have problems
 
 If you get an error that is not listed above:
 
