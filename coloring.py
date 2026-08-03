@@ -2,7 +2,6 @@ from numba import cuda
 import config
 import numpy as np
 import math
-import xml.etree.ElementTree as ET
 import cv2
 import librosa
 import scipy.signal as signal
