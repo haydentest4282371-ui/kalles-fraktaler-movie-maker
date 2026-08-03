@@ -393,3 +393,136 @@ def colorize_image_core(base_phase, lighting, iters, max_iter, img, flow,
     out[y, x, 0] = min(int(c[0] * lt), 255)
     out[y, x, 1] = min(int(c[1] * lt), 255)
     out[y, x, 2] = min(int(c[2] * lt), 255)
+
+
+def colorize_linear(cache, flow, d_out):
+    """
+    cache: (d_lighting, d_base_phase, d_iters, max_iter)  — all device arrays
+    d_out: preallocated device array (h, w, 3) uint8
+    Returns d_out (still on device — caller copies to pinned buf)
+    """
+    d_lighting, d_base_phase, d_iters, max_iter = cache
+
+    h, w = d_base_phase.shape
+    d_cols = _get_device_palette()
+    ncol = d_cols.shape[0]
+
+    threads = (32, 8)
+    blocks = (
+        (w + threads[0] - 1) // threads[0],
+        (h + threads[1] - 1) // threads[1],
+    )
+
+    colorize_linear_core[blocks, threads](
+        d_base_phase,
+        d_lighting,
+        d_iters,
+        max_iter,
+        flow,
+        d_out,
+        config.LINEAR_COLOR
+    )
+
+    return d_out
+
+
+
+@cuda.jit
+def colorize_linear_core(bp,lt,iters,max_iter,flow,out,color):
+    x, y = cuda.grid(2)
+    h, w = bp.shape
+    if x >= w or y >= h:
+        return
+ 
+    if iters[y, x] >= max_iter:
+        out[y, x, 0] = 0
+        out[y, x, 1] = 0
+        out[y, x, 2] = 0
+        return
+
+    value=iters[y,x]+bp[y,x]
+
+    out[y,x,0]=(math.sin((iters[y,x]+bp[y,x])/color[0])*0.5+0.5)*255
+    out[y,x,1]=(math.sin((iters[y,x]+bp[y,x])/color[1])*0.5+0.5)*255
+    out[y,x,2]=(math.sin((iters[y,x]+bp[y,x])/color[2])*0.5+0.5)*255
+
+@cuda.jit
+def find_min_iter(iters, max_iter, out_min):
+    x, y = cuda.grid(2)
+
+    h, w = iters.shape
+
+    if x >= w or y >= h:
+        return
+
+    i = iters[y, x]
+
+    # Ignore inside pixels
+    if i >= max_iter:
+        return
+
+    cuda.atomic.min(out_min, 0, i)
+
+def colorize_distance(cache, flow, d_out):
+    """
+    cache: (d_lighting, d_base_phase, d_iters, max_iter) — all device arrays
+    d_out: preallocated device array (h, w, 3) uint8
+    Returns d_out
+    """
+    d_lighting, d_base_phase, d_iters, max_iter = cache
+
+    h, w = d_iters.shape
+
+    threads = (32, 8)
+    blocks = (
+        (w + threads[0] - 1) // threads[0],
+        (h + threads[1] - 1) // threads[1],
+    )
+
+    threads = (32, 8)
+    blocks = (
+        (w + threads[0] - 1) // threads[0],
+        (h + threads[1] - 1) // threads[1],
+    )
+
+    d_min_iter = cuda.to_device(
+        np.array([max_iter], dtype=np.int32)
+    )
+
+    find_min_iter[blocks, threads](d_iters, max_iter, d_min_iter)
+
+    colorize_distance_core[blocks, threads](
+        d_lighting,
+        d_iters,
+        max_iter,
+        d_out,
+        config.DISTANCE_THRESHOLD,
+        d_base_phase,
+        d_min_iter,
+        config.PERIOD
+    )
+
+    return d_out
+
+
+@cuda.jit
+def colorize_distance_core(lighting, iters, max_iter, out,threshold, base_phase, min_iter, period):
+
+    x, y = cuda.grid(2)
+
+    h, w = iters.shape
+
+    if x >= w or y >= h:
+        return
+
+    iteration = iters[y,x]+base_phase[y,x]
+
+    # Inside the set
+    if iteration >= max_iter:
+        out[y, x, 0] = 0
+        out[y, x, 1] = 255
+        out[y, x, 2] = 0
+        return
+
+    if iters[y,x]%math.floor(config.PERIOD)==0: out[y,x]=(255,255,255)
+    else: out[y,x]=(0,0,0)
