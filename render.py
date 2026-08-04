@@ -664,6 +664,7 @@ def render_sequence(folder, out="out.mp4", segment_size=100):
         elif config.COLORING == "image": coloring.colorize_image(cache, flow, d_out)
         elif config.COLORING == "linear": coloring.colorize_linear(cache,flow,d_out)
         elif config.COLORING == "distance": coloring.colorize_distance(cache, flow, d_out)
+        elif config.COLORING == "de_angle": coloring.colorize_de_angle(cache,flow,d_out)
         cuda.synchronize()
 
         clock.end("colorize_kernel")
@@ -724,9 +725,13 @@ def render_sequence(folder, out="out.mp4", segment_size=100):
     for i in range(warmup):
         layers.append(load_layer(i))
 
-    h, w = layers[0]["cache"][1].shape
+    # fixed export resolution from config
+    w, h = config.DIMS
 
-    pinned, d_out = coloring._get_frame_bufs(h, w)
+    # coloring buffers stay at keyframe resolution
+    kh, kw = layers[0]["cache"][1].shape
+
+    pinned, d_out = coloring._get_frame_bufs(kh, kw)
 
     flow = -frame_id * config.FLOW_SPEED
 
@@ -790,10 +795,17 @@ def render_sequence(folder, out="out.mp4", segment_size=100):
 
                 flow -= config.FLOW_SPEED
 
-                clock.start("encode")
+                if frame.shape[1] != w or frame.shape[0] != h:
+                    frame = cv2.resize(
+                        frame,
+                        (w, h),
+                        interpolation=config.INTERPOLATION
+                    )
 
+                clock.start("encode")
+                
                 writer.stdin.write(
-                    frame.tobytes()
+                    frame.astype(np.uint8).tobytes()
                 )
 
                 clock.end("encode")
