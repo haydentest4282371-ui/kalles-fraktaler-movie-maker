@@ -478,12 +478,6 @@ def colorize_distance(cache, flow, d_out):
         (h + threads[1] - 1) // threads[1],
     )
 
-    threads = (32, 8)
-    blocks = (
-        (w + threads[0] - 1) // threads[0],
-        (h + threads[1] - 1) // threads[1],
-    )
-
     d_min_iter = cuda.to_device(
         np.array([max_iter], dtype=np.int32)
     )
@@ -498,14 +492,28 @@ def colorize_distance(cache, flow, d_out):
         config.DISTANCE_THRESHOLD,
         d_base_phase,
         d_min_iter,
-        config.PERIOD
+        config.PERIOD,
+        config.DISTANCE_SENSITIVITY,
+        config.DISTANCE_STEP,
+        config.DISTANCE_GAMMA,
     )
 
     return d_out
 
 
+@cuda.jit(device=True, inline=True)
+def _smooth_iter(iters, base_phase, h, w, x, y, max_iter):
+    xc = min(max(x, 0), w - 1)
+    yc = min(max(y, 0), h - 1)
+    val = iters[yc, xc] + base_phase[yc, xc]
+    if val > max_iter:
+        val = max_iter
+    return val
+
+
 @cuda.jit
-def colorize_distance_core(lighting, iters, max_iter, out,threshold, base_phase, min_iter, period):
+def colorize_distance_core(lighting, iters, max_iter, out, threshold, base_phase, min_iter, period,
+                            sensitivity, step, gamma):
 
     x, y = cuda.grid(2)
 
@@ -514,7 +522,7 @@ def colorize_distance_core(lighting, iters, max_iter, out,threshold, base_phase,
     if x >= w or y >= h:
         return
 
-    iteration = iters[y,x]+base_phase[y,x]
+    iteration = iters[y, x] + base_phase[y, x]
 
     # Inside the set
     if iteration >= max_iter:
@@ -523,5 +531,37 @@ def colorize_distance_core(lighting, iters, max_iter, out,threshold, base_phase,
         out[y, x, 2] = 0
         return
 
-    if iters[y,x]%math.floor(config.PERIOD)==0: out[y,x]=(255,255,255)
-    else: out[y,x]=(0,0,0)
+    # --- gradient-based distance estimate (no z_n available) ---
+    mu_xp = _smooth_iter(iters, base_phase, h, w, x + step, y, max_iter)
+    mu_xm = _smooth_iter(iters, base_phase, h, w, x - step, y, max_iter)
+    mu_yp = _smooth_iter(iters, base_phase, h, w, x, y + step, max_iter)
+    mu_ym = _smooth_iter(iters, base_phase, h, w, x, y - step, max_iter)
+
+    dmu_dx = (mu_xp - mu_xm) / (2.0 * step)
+    dmu_dy = (mu_yp - mu_ym) / (2.0 * step)
+
+    grad_mag = math.sqrt(dmu_dx * dmu_dx + dmu_dy * dmu_dy) * sensitivity
+
+    if grad_mag < 1e-6:
+        dist = 1e6
+    else:
+        dist = 1.0 / grad_mag
+
+    # --- black (strong, close to boundary) -> white (weak, far) ---
+    if dist < threshold:
+        t = dist / threshold
+        t = t ** gamma
+        val = int(255 * t)
+        if val < 0:
+            val = 0
+        if val > 255:
+            val = 255
+        out[y, x, 0] = val
+        out[y, x, 1] = val
+        out[y, x, 2] = val
+        return
+
+    # far from any boundary -> full white
+    out[y, x, 0] = 255
+    out[y, x, 1] = 255
+    out[y, x, 2] = 255
