@@ -7,9 +7,14 @@ SHADING_DIVISOR=3
 
 USE_RFF=False
 
+
+DIMS=1920,1080
+
 OUTPUT = "mandelbrot.mp4"
 TMP="tmp"
 STATE_FILE="state"
+PERF_REPORT_INTERVAL=100
+LINEAR_COLOR=(2,3,4)
 # ------------------------------------------------------------
 # COLOR
 # ------------------------------------------------------------
@@ -48,9 +53,9 @@ CQ = 22
 INTERPOLATION = cv2.INTER_AREA
 
 # base settings (required by all)
-USER_FLOW_SPEED=1/4
-PERIOD = 5
-FLOW_SPEED = USER_FLOW_SPEED/FPS/PERIOD
+USER_FLOW_SPEED=float(1)
+PERIOD = 10
+
 
 # contour settings
 PALETTE_GROUPS=8
@@ -72,8 +77,14 @@ AUDIO_PATH="/home/hayden/Videos/editing/mandelaudio.mp3"
 AUDIO_BASE_COLORING="contour" # coloring method to layer audio on top of
 AUDIO_MODULATED_VALUES=["CONTOUR_WIDTH",] # accepts any value in config
 
+DISTANCE_SENSITIVITY = 1.0   # raise to make boundary lines more sensitive/prominent
+DISTANCE_STEP = 1            # widen (2-3) if gradient is too faint at deep zoom
+DISTANCE_GAMMA = 0.4         # lower (toward 0.2) for a punchier black core near boundary
+DISTANCE_THRESHOLD=0.7
+IMAGE_PATH=""
+
 # standard equals direct palette mapping and contour does darkening layering with contours (any values put here will be overriden by audio if audio coloring is used)
-COLORING= "standard"
+COLORING= "distance"
 PALETTE = "retro_days"
 PALETTES = {
 
