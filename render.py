@@ -5,10 +5,9 @@ import math
 import cv2
 from frame_loader import discover_frames, load_frame
 import config
-from numba import cuda
 import time
 import coloring
-from numba import prange, njit
+from numba import prange, njit, cuda
 import json
 import shutil
 
@@ -564,7 +563,7 @@ def zoom(img, scale):
     )
 
 @njit(parallel=True)
-def composite_center(base, overlay, blend):
+def composite_center(base, overlay, feather):
     bh, bw, _ = base.shape
     oh, ow, _ = overlay.shape
 
@@ -583,41 +582,38 @@ def composite_center(base, overlay, blend):
             if bx < 0 or bx >= bw:
                 continue
 
-            if blend <= 0:
+            if feather <= 0:
                 base[by, bx, 0] = overlay[y, x, 0]
                 base[by, bx, 1] = overlay[y, x, 1]
                 base[by, bx, 2] = overlay[y, x, 2]
+                continue
 
-            else:
-                edge = x
-                if y < edge:
-                    edge = y
-                if ow - 1 - x < edge:
-                    edge = ow - 1 - x
-                if oh - 1 - y < edge:
-                    edge = oh - 1 - y
+            edge = min(
+                x,
+                y,
+                ow - 1 - x,
+                oh - 1 - y
+            )
 
-                alpha = edge / blend
+            alpha = min(1.0, edge / feather)
 
-                if alpha > 1:
-                    alpha = 1
+            inv = 1.0 - alpha
 
-                inv = 1 - alpha
+            base[by, bx, 0] = (
+                overlay[y, x, 0] * alpha +
+                base[by, bx, 0] * inv
+            )
 
-                base[by, bx, 0] = (
-                    overlay[y, x, 0] * alpha +
-                    base[by, bx, 0] * inv
-                )
+            base[by, bx, 1] = (
+                overlay[y, x, 1] * alpha +
+                base[by, bx, 1] * inv
+            )
 
-                base[by, bx, 1] = (
-                    overlay[y, x, 1] * alpha +
-                    base[by, bx, 1] * inv
-                )
+            base[by, bx, 2] = (
+                overlay[y, x, 2] * alpha +
+                base[by, bx, 2] * inv
+            )
 
-                base[by, bx, 2] = (
-                    overlay[y, x, 2] * alpha +
-                    base[by, bx, 2] * inv
-                )
 
 def render_sequence(folder, out="out.mp4", segment_size=100):
     config.FLOW_SPEED = config.USER_FLOW_SPEED/config.FPS/config.PERIOD
@@ -653,8 +649,20 @@ def render_sequence(folder, out="out.mp4", segment_size=100):
 
     clock = StageClock()
 
-    def render_color(layer):
-        cache = layer["cache"]
+    # Composite all layers' raw (phase, light, iters) fields into one
+    # combined field first, then run the colorize kernel exactly ONCE
+    # per output frame on the combined field -- instead of colorizing
+    # every layer separately and compositing already-colorized RGB.
+    def colorize_composited(canvas, max_iter):
+        phase_c = np.ascontiguousarray(canvas[..., 0])
+        light_c = np.ascontiguousarray(canvas[..., 1])
+        iters_c = np.ascontiguousarray(canvas[..., 2])
+
+        d_phase_c.copy_to_device(phase_c)
+        d_light_c.copy_to_device(light_c)
+        d_iters_c.copy_to_device(iters_c)
+
+        cache = (d_light_c, d_phase_c, d_iters_c, max_iter)
 
         clock.start("colorize_kernel")
 
@@ -662,9 +670,8 @@ def render_sequence(folder, out="out.mp4", segment_size=100):
         elif config.COLORING == "contour": coloring.colorize_contour(cache, flow, d_out)
         elif config.COLORING == "audio": coloring.colorize_audio(cache, flow, d_out)
         elif config.COLORING == "image": coloring.colorize_image(cache, flow, d_out)
-        elif config.COLORING == "linear": coloring.colorize_linear(cache,flow,d_out)
+        elif config.COLORING == "linear": coloring.colorize_linear(cache, flow, d_out)
         elif config.COLORING == "distance": coloring.colorize_distance(cache, flow, d_out)
-        elif config.COLORING == "de_angle": coloring.colorize_de_angle(cache,flow,d_out)
         cuda.synchronize()
 
         clock.end("colorize_kernel")
@@ -698,8 +705,24 @@ def render_sequence(folder, out="out.mp4", segment_size=100):
         kfb = load_kfb(files[index])
         cache = build_render_cache(kfb)
 
+        d_light, d_phase, d_iters, max_iter = cache
+
+        # host-side copies of the raw fields, stacked into one
+        # (h, w, 3) array so composite_center can blend phase/light/
+        # iters together the same way it used to blend r/g/b
+        phase_host = kfb.smooth.astype(np.float32)
+        light_host = d_light.copy_to_host()
+        iters_host = kfb.iter.astype(np.float32)
+
+        field = np.stack(
+            [phase_host, light_host, iters_host],
+            axis=-1
+        ).astype(np.float32)
+
         layer = {
             "cache": cache,
+            "max_iter": max_iter,
+            "field": field,
             "zoom": kfb.log_zoom,
             "index": index
         }
@@ -729,9 +752,15 @@ def render_sequence(folder, out="out.mp4", segment_size=100):
     w, h = config.DIMS
 
     # coloring buffers stay at keyframe resolution
-    kh, kw = layers[0]["cache"][1].shape
+    kh, kw = layers[0]["field"].shape[:2]
 
     pinned, d_out = coloring._get_frame_bufs(kh, kw)
+
+    # persistent device buffers for the composited field, reused every
+    # frame instead of reallocating on each cuda.to_device call
+    d_phase_c = cuda.device_array((kh, kw), dtype=np.float32)
+    d_light_c = cuda.device_array((kh, kw), dtype=np.float32)
+    d_iters_c = cuda.device_array((kh, kw), dtype=np.float32)
 
     flow = -frame_id * config.FLOW_SPEED
 
@@ -768,28 +797,36 @@ def render_sequence(folder, out="out.mp4", segment_size=100):
 
                 clock.start("composite")
 
-                render_color(layers[0])
-
-                frame = zoom(
-                    pinned,
+                canvas = zoom(
+                    layers[0]["field"],
                     10 ** (z - layers[0]["zoom"])
                 )
 
                 for layer in layers[1:]:
 
-                    render_color(layer)
-
                     scale = 10 ** (z - layer["zoom"])
 
-                    img = resize_layer(
-                        pinned,
+                    field = resize_layer(
+                        layer["field"],
                         scale
                     )
 
                     paste_center(
-                        frame,
-                        img
+                        canvas,
+                        field
                     )
+
+                max_iter = min(
+                    layer["max_iter"]
+                    for layer in layers
+                )-10
+
+                colorize_composited(
+                    canvas,
+                    max_iter
+                )
+
+                frame = pinned
 
                 clock.end("composite")
 
