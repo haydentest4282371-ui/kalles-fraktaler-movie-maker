@@ -526,9 +526,9 @@ def colorize_distance_core(lighting, iters, max_iter, out, threshold, base_phase
 
     # Inside the set
     if iteration >= max_iter:
-        out[y, x, 0] = 0
+        out[y, x, 0] = 255
         out[y, x, 1] = 255
-        out[y, x, 2] = 0
+        out[y, x, 2] = 255
         return
 
     # --- gradient-based distance estimate (no z_n available) ---
@@ -551,7 +551,7 @@ def colorize_distance_core(lighting, iters, max_iter, out, threshold, base_phase
     if dist < threshold:
         t = dist / threshold
         t = t ** gamma
-        val = int(255 * t)
+        val = int(255 * (1.0 - t))
         if val < 0:
             val = 0
         if val > 255:
@@ -562,6 +562,6 @@ def colorize_distance_core(lighting, iters, max_iter, out, threshold, base_phase
         return
 
     # far from any boundary -> full white
-    out[y, x, 0] = 255
-    out[y, x, 1] = 255
-    out[y, x, 2] = 255
+    out[y, x, 0] = 0
+    out[y, x, 1] = 0
+    out[y, x, 2] = 0
